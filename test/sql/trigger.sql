@@ -1,7 +1,7 @@
 \unset ECHO
 \i test/setup.sql
 
-SELECT plan(84);
+SELECT plan(97);
 --SELECT * FROM no_plan();
 
 -- This will be rolled back. :-)
@@ -25,6 +25,26 @@ CREATE TRIGGER upd_users_pass
 BEFORE UPDATE ON public.users
 FOR EACH ROW EXECUTE PROCEDURE hash_pass();
 RESET client_min_messages;
+
+-- trigger_events_are seed
+CREATE TABLE test_table (
+    id SERIAL PRIMARY KEY,
+    name TEXT
+);
+
+-- Create a trigger on the test table
+CREATE OR REPLACE FUNCTION test_trigger_function()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Trigger function logic here
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER test_trigger
+AFTER INSERT OR UPDATE ON test_table
+FOR EACH ROW
+EXECUTE FUNCTION test_trigger_function();
 
 /****************************************************************************/
 -- Test has_trigger() and hasnt_trigger().
@@ -269,6 +289,64 @@ SELECT * FROM check_test(
     Missing triggers:
         howdy'
 );
+
+/****************************************************************************/
+-- Test triggers_events_are().
+-- Test Case 1: No missing or extra events (Both INSERT and UPDATE are expected).
+SELECT * FROM check_test(
+    trigger_events_are('test_table', 'test_trigger', ARRAY['INSERT', 'UPDATE'], 'should have no missing or extra events'),
+    true,
+    'trigger_events_are(table, trigger, events, desc)'
+);
+
+-- Test Case 2: Missing event (Only INSERT is expected).
+SELECT * FROM check_test(
+    trigger_events_are('test_table', 'test_trigger', ARRAY['INSERT'], 'should fail with extra event UPDATE'),
+    false,
+    'trigger_events_are(table, trigger, events, desc) + extra',
+    'should fail with extra event UPDATE',
+    E'    Extra events:\n        "UPDATE"'
+);
+
+-- Test Case 3: Extra event (Only UPDATE is expected). --> TODO! Change so only getting missing Event
+SELECT * FROM check_test(
+    trigger_events_are('test_table', 'test_trigger', ARRAY['UPDATE'], 'should fail with extra event INSERT'),
+    false,
+    'trigger_events_are(table, trigger, events, desc)',
+    'should fail with extra event INSERT',
+    E'    Extra events:\n        "INSERT"'
+);
+
+-- Test Case 4: Both missing and extra events (Only DELETE is expected).
+SELECT * FROM check_test(
+    trigger_events_are('test_table', 'test_trigger', ARRAY['DELETE'], 'should fail with both missing and extra events'), 
+    false,
+    'trigger_events_are(table, trigger, events, desc) + extra & missing',
+    'should fail with both missing and extra events',
+    E'    Extra events:\n        "INSERT"\n        "UPDATE"\n    Missing events:\n        "DELETE"'
+);
+
+-- Test Case 5: Trigger does not exist.
+SELECT * FROM check_test(
+    trigger_events_are('test_table', 'non_existent_trigger', ARRAY['INSERT'], 'should fail - trigger does not exist'),
+    false,
+    'trigger_events_are(table, non_existent_trigger, events, desc)'
+);
+
+-- Test Case 6: Table does not exist.
+SELECT * FROM check_test(
+    trigger_events_are('non_existent_table', 'test_trigger', ARRAY['INSERT'], 'should fail - table does not exist'),
+    false,
+    'trigger_events_are(non_existent_table, trigger, events, desc)'
+);
+
+-- Test Case 7: Empty events.
+SELECT * FROM check_test(
+    trigger_events_are('test_table', 'test_trigger', ARRAY[]::TEXT[], 'should fail with both missing and extra events'),
+    false,
+    'trigger_events_are(table, trigger, ARRAY[], desc)'
+);
+
 
 /****************************************************************************/
 -- Finish the tests and clean up.
