@@ -27,7 +27,7 @@ FOR EACH ROW EXECUTE PROCEDURE hash_pass();
 RESET client_min_messages;
 
 -- trigger_events_are seed
-CREATE TABLE test_table (
+CREATE TABLE public.test_table(
     id SERIAL PRIMARY KEY,
     name TEXT
 );
@@ -42,9 +42,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER test_trigger
-AFTER INSERT OR UPDATE ON test_table
+AFTER INSERT OR UPDATE ON public.test_table
 FOR EACH ROW
 EXECUTE FUNCTION test_trigger_function();
+
 
 /****************************************************************************/
 -- Test has_trigger() and hasnt_trigger().
@@ -347,6 +348,14 @@ SELECT * FROM check_test(
     'trigger_events_are(table, trigger, ARRAY[], desc)'
 );
 
+-- Test Case 8: With schema
+SELECT * FROM check_test(
+    trigger_events_are('public', 'test_table', 'test_trigger', ARRAY['INSERT', 'UPDATE']::NAME[], 'whatever'),
+    true,
+    'trigger_events_are(schema, table, triggers, desc)',
+    'whatever',
+    ''
+);
 
 /****************************************************************************/
 -- Finish the tests and clean up.
